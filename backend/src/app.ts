@@ -1,4 +1,5 @@
 import express from 'express';
+import path from 'path';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -20,8 +21,13 @@ setInterval(async () => {
     const activeTampered: any[] = [];
 
     for (const project of projects) {
-      const latestRecord = await blockchainRepository.findLatestByProjectId(project.id);
-      const blockchainAmount = latestRecord ? Number(latestRecord.amount) : 0;
+      const latestRecord =
+        await blockchainRepository.findLatestByProjectId(project.id);
+
+      const blockchainAmount = latestRecord
+        ? Number(latestRecord.amount)
+        : 0;
+
       const dbAmount = Number(project.amount);
 
       if (dbAmount !== blockchainAmount) {
@@ -37,14 +43,19 @@ setInterval(async () => {
           await projectRepository.updateBlockchainFields(project.code, {
             integrityStatus: 'Mismatch',
           });
+
           await auditRepository.create({
             projectId: project.id,
             databaseAmount: dbAmount,
             blockchainAmount,
             difference: dbAmount - blockchainAmount,
             status: 'Mismatch',
-            notes: { action: 'AUTO_MONITOR_TAMPER', timestamp: new Date().toLocaleTimeString() },
+            notes: {
+              action: 'AUTO_MONITOR_TAMPER',
+              timestamp: new Date().toLocaleTimeString(),
+            },
           });
+
           await tamperLogService.logDirectDbChange(
             project.code,
             'amount',
@@ -58,13 +69,17 @@ setInterval(async () => {
           await projectRepository.updateBlockchainFields(project.code, {
             integrityStatus: 'Verified',
           });
+
           await auditRepository.create({
             projectId: project.id,
             databaseAmount: dbAmount,
             blockchainAmount,
             difference: 0,
             status: 'Verified',
-            notes: { action: 'AUTO_MONITOR_RESTORE', timestamp: new Date().toLocaleTimeString() },
+            notes: {
+              action: 'AUTO_MONITOR_RESTORE',
+              timestamp: new Date().toLocaleTimeString(),
+            },
           });
         }
       }
@@ -72,17 +87,28 @@ setInterval(async () => {
 
     // Fetch the recent audits to build history dynamically
     const recentAudits = await auditRepository.findRecent(30);
+
     const historyList = recentAudits
-      .filter((audit) => audit.status === 'Mismatch' || (audit.notes && (audit.notes.action === 'AUTO_MONITOR_TAMPER' || audit.notes.action === 'AUTO_MONITOR_RESTORE')))
+      .filter(
+        (audit) =>
+          audit.status === 'Mismatch' ||
+          (audit.notes &&
+            (audit.notes.action === 'AUTO_MONITOR_TAMPER' ||
+              audit.notes.action === 'AUTO_MONITOR_RESTORE')),
+      )
       .map((audit) => {
-        const proj = projects.find(p => p.id === audit.projectId);
+        const proj = projects.find((p) => p.id === audit.projectId);
+
         return {
           code: proj ? proj.code : 'UNKNOWN',
           name: proj ? proj.name : 'Unknown Project',
           dbAmount: audit.databaseAmount,
           blockchainAmount: audit.blockchainAmount,
           timestamp: audit.createdAt.toLocaleTimeString(),
-          status: audit.status === 'Mismatch' ? 'ACTIVE' as const : 'RESTORED' as const,
+          status:
+            audit.status === 'Mismatch'
+              ? ('ACTIVE' as const)
+              : ('RESTORED' as const),
         };
       });
 
@@ -90,6 +116,7 @@ setInterval(async () => {
       tampered: activeTampered,
       history: historyList,
     });
+
     sseClients.forEach((client) => {
       client.write(`data: ${data}\n\n`);
     });
@@ -102,13 +129,25 @@ export function createApp() {
   const app = express();
 
   app.use(helmet());
-  app.use(cors({ origin: [env.CORS_ORIGIN, 'http://localhost:5174'] }));
+
+  app.use(
+    cors({
+      origin: [env.CORS_ORIGIN, 'http://localhost:5174'],
+    }),
+  );
+
   app.use(express.json({ limit: '2mb' }));
   app.use(express.urlencoded({ extended: true }));
-  app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+
+  app.use(
+    morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'),
+  );
 
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', service: 'gramtrust-backend' });
+    res.json({
+      status: 'ok',
+      service: 'gramtrust-backend',
+    });
   });
 
   // SSE Stream Endpoint
@@ -121,36 +160,67 @@ export function createApp() {
     sseClients.push(res);
 
     // Send initial status immediately from DB
-    Promise.all([projectRepository.findAll(), auditRepository.findRecent(30)]).then(([projects, recentAudits]) => {
-      const activeTampered = projects.filter(p => p.integrityStatus === 'Mismatch').map(p => ({
-        code: p.code,
-        name: p.name,
-        dbAmount: Number(p.amount),
-        blockchainAmount: Number(p.amount),
-      }));
-      const historyList = recentAudits
-        .filter((audit) => audit.status === 'Mismatch' || (audit.notes && (audit.notes.action === 'AUTO_MONITOR_TAMPER' || audit.notes.action === 'AUTO_MONITOR_RESTORE')))
-        .map((audit) => {
-          const proj = projects.find(p => p.id === audit.projectId);
-          return {
-            code: proj ? proj.code : 'UNKNOWN',
-            name: proj ? proj.name : 'Unknown Project',
-            dbAmount: audit.databaseAmount,
-            blockchainAmount: audit.blockchainAmount,
-            timestamp: audit.createdAt.toLocaleTimeString(),
-            status: audit.status === 'Mismatch' ? 'ACTIVE' as const : 'RESTORED' as const,
-          };
-        });
+    Promise.all([
+      projectRepository.findAll(),
+      auditRepository.findRecent(30),
+    ])
+      .then(([projects, recentAudits]) => {
+        const activeTampered = projects
+          .filter((p) => p.integrityStatus === 'Mismatch')
+          .map((p) => ({
+            code: p.code,
+            name: p.name,
+            dbAmount: Number(p.amount),
+            blockchainAmount: Number(p.amount),
+          }));
 
-      res.write(`data: ${JSON.stringify({ tampered: activeTampered, history: historyList })}\n\n`);
-    }).catch(() => {});
+        const historyList = recentAudits
+          .filter(
+            (audit) =>
+              audit.status === 'Mismatch' ||
+              (audit.notes &&
+                (audit.notes.action === 'AUTO_MONITOR_TAMPER' ||
+                  audit.notes.action === 'AUTO_MONITOR_RESTORE')),
+          )
+          .map((audit) => {
+            const proj = projects.find((p) => p.id === audit.projectId);
+
+            return {
+              code: proj ? proj.code : 'UNKNOWN',
+              name: proj ? proj.name : 'Unknown Project',
+              dbAmount: audit.databaseAmount,
+              blockchainAmount: audit.blockchainAmount,
+              timestamp: audit.createdAt.toLocaleTimeString(),
+              status:
+                audit.status === 'Mismatch'
+                  ? ('ACTIVE' as const)
+                  : ('RESTORED' as const),
+            };
+          });
+
+        res.write(
+          `data: ${JSON.stringify({
+            tampered: activeTampered,
+            history: historyList,
+          })}\n\n`,
+        );
+      })
+      .catch(() => {});
 
     req.on('close', () => {
       sseClients = sseClients.filter((client) => client !== res);
     });
   });
 
+  // Serve Document Integrity PDFs
+  app.use(
+    '/documents/files',
+    express.static(path.resolve(process.cwd(), 'documents')),
+  );
+
+  // Existing API routes
   app.use('/api', apiRoutes);
+
   app.use(notFoundMiddleware);
   app.use(errorMiddleware);
 

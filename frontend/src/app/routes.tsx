@@ -16,14 +16,25 @@ import { TendersPage } from '@/features/tenders/tenders-page';
 import { TenderDetailsPage } from '@/features/tenders/tender-details-page';
 import { GovernmentSourcesPage } from '@/features/sources/government-sources-page';
 import { VendorsPage } from '@/features/vendors/vendors-page';
+import { DocumentsPage } from '@/features/documents/documents-page';
 import { useAuth } from '@/features/auth/auth-context';
 
 /** Redirect logged-in users from / to their role-specific dashboard */
 function RoleRedirect() {
   const { user, isAuthenticated } = useAuth();
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
-  if (user?.role === 'ADMIN') return <Navigate to="/admin-dashboard" replace />;
-  if (user?.role === 'OFFICIAL') return <Navigate to="/official" replace />;
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user?.role === 'ADMIN') {
+    return <Navigate to="/admin-dashboard" replace />;
+  }
+
+  if (user?.role === 'OFFICIAL') {
+    return <Navigate to="/official" replace />;
+  }
+
   return <Navigate to="/citizen" replace />;
 }
 
@@ -37,7 +48,13 @@ export function AppRoutes() {
       <Route path="/" element={<RoleRedirect />} />
 
       {/* Protected shell — ALL authenticated users */}
-      <Route element={<ProtectedRoute roles={['CITIZEN', 'OFFICIAL', 'ADMIN', 'AUDITOR']} />}>
+      <Route
+        element={
+          <ProtectedRoute
+            roles={['CITIZEN', 'OFFICIAL', 'ADMIN', 'AUDITOR']}
+          />
+        }
+      >
         <Route element={<AppShell />}>
 
           {/* Role-specific dashboards */}
@@ -47,10 +64,19 @@ export function AppRoutes() {
 
           {/* Common data pages — all roles */}
           <Route path="/projects" element={<ProjectsPage />} />
-          <Route path="/projects/:projectId" element={<ProjectDetailsPage />} />
-          <Route path="/verification" element={<BlockchainVerificationPage />} />
+          <Route
+            path="/projects/:projectId"
+            element={<ProjectDetailsPage />}
+          />
+          <Route
+            path="/verification"
+            element={<BlockchainVerificationPage />}
+          />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/tamper-logs" element={<TamperLogsPage />} />
+
+          {/* Document Integrity Verification Module — all roles */}
+          <Route path="/documents" element={<DocumentsPage />} />
 
           {/* Tender & Vendor Transparency Module — all authenticated */}
           <Route path="/tenders" element={<TendersPage />} />
@@ -58,15 +84,30 @@ export function AppRoutes() {
           <Route path="/vendors" element={<VendorsPage />} />
 
           {/* OFFICIAL + ADMIN + AUDITOR only */}
-          <Route element={<ProtectedRoute roles={['OFFICIAL', 'ADMIN', 'AUDITOR']} />}>
-            <Route path="/integrity-report" element={<IntegrityReportPage />} />
-            <Route path="/sources" element={<GovernmentSourcesPage />} />
+          <Route
+            element={
+              <ProtectedRoute
+                roles={['OFFICIAL', 'ADMIN', 'AUDITOR']}
+              />
+            }
+          >
+            <Route
+              path="/integrity-report"
+              element={<IntegrityReportPage />}
+            />
+            <Route
+              path="/sources"
+              element={<GovernmentSourcesPage />}
+            />
           </Route>
 
           {/* ADMIN only */}
-          <Route element={<ProtectedRoute roles={['ADMIN']} />}>
+          <Route
+            element={<ProtectedRoute roles={['ADMIN']} />}
+          >
             <Route path="/admin" element={<AdminPanelPage />} />
           </Route>
+
         </Route>
       </Route>
 

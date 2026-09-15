@@ -91,7 +91,26 @@ export const tamperLogService = {
       status: 'DETECTED',
     });
   },
-
+  /**
+   * Called when document integrity verification detects a hash mismatch.
+   */
+  async logDocumentMismatch(
+    recordId: string,
+    expectedHash: string,
+    currentHash: string,
+  ) {
+    return tamperLogRepository.create({
+      recordId,
+      userId: null,
+      userName: 'Blockchain Integrity Monitor',
+      userRole: 'SYSTEM',
+      fieldName: 'document_integrity',
+      oldValue: expectedHash,
+      newValue: currentHash,
+      changeType: 'BLOCKCHAIN_MISMATCH',
+      status: 'DETECTED',
+    });
+  },
   async getLogs(filters: TamperLogFilters) {
     return tamperLogRepository.findAll(filters);
   },
