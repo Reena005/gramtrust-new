@@ -1,25 +1,32 @@
 import { Route, Routes, Navigate } from 'react-router-dom';
 import { AppShell } from '@/components/layout/app-shell';
+
 import { DashboardPage } from '@/features/dashboard/dashboard-page';
 import { ProjectsPage } from '@/features/projects/projects-page';
 import { ProjectDetailsPage } from '@/features/projects/project-details-page';
 import { BlockchainVerificationPage } from '@/features/verification/blockchain-verification-page';
 import { IntegrityReportPage } from '@/features/reports/integrity-report-page';
+
 import { AdminPanelPage } from '@/features/admin/admin-panel-page';
 import { LoginPage } from '@/features/auth/login-page';
 import { ProtectedRoute } from '@/features/auth/protected-route';
+
 import { CitizenDashboard } from '@/features/dashboard/citizen-dashboard';
 import { OfficialDashboard } from '@/features/dashboard/official-dashboard';
 import { AdminDashboard } from '@/features/dashboard/admin-dashboard';
+
 import { TamperLogsPage } from '@/features/admin/tamper-logs-page';
 import { TendersPage } from '@/features/tenders/tenders-page';
 import { TenderDetailsPage } from '@/features/tenders/tender-details-page';
 import { GovernmentSourcesPage } from '@/features/sources/government-sources-page';
 import { VendorsPage } from '@/features/vendors/vendors-page';
 import { DocumentsPage } from '@/features/documents/documents-page';
+
 import { useAuth } from '@/features/auth/auth-context';
 
-/** Redirect logged-in users from / to their role-specific dashboard */
+/**
+ * Redirect logged-in users from / to their role-specific dashboard
+ */
 function RoleRedirect() {
   const { user, isAuthenticated } = useAuth();
 
@@ -41,13 +48,21 @@ function RoleRedirect() {
 export function AppRoutes() {
   return (
     <Routes>
-      {/* Public */}
+      {/* =========================================================
+          PUBLIC ROUTES
+         ========================================================= */}
+
       <Route path="/login" element={<LoginPage />} />
 
       {/* Root: redirect by role */}
       <Route path="/" element={<RoleRedirect />} />
 
-      {/* Protected shell — ALL authenticated users */}
+
+      {/* =========================================================
+          PROTECTED ROUTES
+          ALL AUTHENTICATED USERS
+         ========================================================= */}
+
       <Route
         element={
           <ProtectedRoute
@@ -57,33 +72,95 @@ export function AppRoutes() {
       >
         <Route element={<AppShell />}>
 
-          {/* Role-specific dashboards */}
-          <Route path="/citizen" element={<CitizenDashboard />} />
-          <Route path="/official" element={<OfficialDashboard />} />
-          <Route path="/admin-dashboard" element={<AdminDashboard />} />
+          {/* =====================================================
+              ROLE-SPECIFIC DASHBOARDS
+             ===================================================== */}
 
-          {/* Common data pages — all roles */}
-          <Route path="/projects" element={<ProjectsPage />} />
+          <Route
+            path="/citizen"
+            element={<CitizenDashboard />}
+          />
+
+          <Route
+            path="/official"
+            element={<OfficialDashboard />}
+          />
+
+          <Route
+            path="/admin-dashboard"
+            element={<AdminDashboard />}
+          />
+
+
+          {/* =====================================================
+              COMMON DATA PAGES
+              ALL AUTHENTICATED USERS
+             ===================================================== */}
+
+          <Route
+            path="/dashboard"
+            element={<DashboardPage />}
+          />
+
+          <Route
+            path="/projects"
+            element={<ProjectsPage />}
+          />
+
           <Route
             path="/projects/:projectId"
             element={<ProjectDetailsPage />}
           />
+
           <Route
             path="/verification"
             element={<BlockchainVerificationPage />}
           />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/tamper-logs" element={<TamperLogsPage />} />
 
-          {/* Document Integrity Verification Module — all roles */}
-          <Route path="/documents" element={<DocumentsPage />} />
+          <Route
+            path="/tamper-logs"
+            element={<TamperLogsPage />}
+          />
 
-          {/* Tender & Vendor Transparency Module — all authenticated */}
-          <Route path="/tenders" element={<TendersPage />} />
-          <Route path="/tenders/:id" element={<TenderDetailsPage />} />
-          <Route path="/vendors" element={<VendorsPage />} />
+          <Route
+            path="/documents"
+            element={<DocumentsPage />}
+          />
 
-          {/* OFFICIAL + ADMIN + AUDITOR only */}
+          <Route
+            path="/tenders"
+            element={<TendersPage />}
+          />
+
+          <Route
+            path="/tenders/:id"
+            element={<TenderDetailsPage />}
+          />
+
+          <Route
+            path="/vendors"
+            element={<VendorsPage />}
+          />
+
+
+          {/* =====================================================
+              INTEGRITY REPORT
+              MOVED HERE SO IT CAN RENDER FOR ANY AUTHENTICATED
+              USER INSTEAD OF BEING BLOCKED BY A SECOND
+              ProtectedRoute
+             ===================================================== */}
+
+          <Route
+            path="/integrity-report"
+            element={<IntegrityReportPage />}
+          />
+
+
+          {/* =====================================================
+              GOVERNMENT SOURCES
+              OFFICIAL + ADMIN + AUDITOR
+             ===================================================== */}
+
           <Route
             element={
               <ProtectedRoute
@@ -92,27 +169,41 @@ export function AppRoutes() {
             }
           >
             <Route
-              path="/integrity-report"
-              element={<IntegrityReportPage />}
-            />
-            <Route
               path="/sources"
               element={<GovernmentSourcesPage />}
             />
           </Route>
 
-          {/* ADMIN only */}
+
+          {/* =====================================================
+              ADMIN ONLY
+             ===================================================== */}
+
           <Route
-            element={<ProtectedRoute roles={['ADMIN']} />}
+            element={
+              <ProtectedRoute
+                roles={['ADMIN']}
+              />
+            }
           >
-            <Route path="/admin" element={<AdminPanelPage />} />
+            <Route
+              path="/admin"
+              element={<AdminPanelPage />}
+            />
           </Route>
 
         </Route>
       </Route>
 
-      {/* Catch-all */}
-      <Route path="*" element={<Navigate to="/" replace />} />
+
+      {/* =========================================================
+          CATCH-ALL
+         ========================================================= */}
+
+      <Route
+        path="*"
+        element={<Navigate to="/" replace />}
+      />
     </Routes>
   );
 }

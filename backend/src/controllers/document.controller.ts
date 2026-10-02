@@ -13,7 +13,9 @@ export const documentController = {
   },
 
   async getById(req: Request, res: Response) {
-    const document = await documentService.getById(String(req.params.id));
+    const document = await documentService.getById(
+      String(req.params.id)
+    );
 
     res.json({
       success: true,
@@ -22,7 +24,9 @@ export const documentController = {
   },
 
   async verify(req: Request, res: Response) {
-    const result = await documentService.verify(String(req.params.id));
+    const result = await documentService.verify(
+      String(req.params.id)
+    );
 
     res.json({
       success: true,
@@ -31,7 +35,13 @@ export const documentController = {
   },
 
   async anchor(req: Request, res: Response) {
-    const result = await documentService.anchor(String(req.params.id));
-    res.status(201).json({ success: true, data: result });
+    const document = await documentService.anchor(
+      String(req.params.id)
+    );
+
+    return res.status(201).json({
+      success: true,
+      data: document,
+    });
   },
 };

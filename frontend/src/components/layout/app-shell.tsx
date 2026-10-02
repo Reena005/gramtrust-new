@@ -17,8 +17,8 @@ import {
 } from '@heroicons/react/24/outline';
 
 import { cn } from '@/lib/utils';
-
 import { useAuth, UserRole } from '@/features/auth/auth-context';
+import { apiClient } from '@/lib/api-client';
 
 export interface TamperIncident {
   code: string;
@@ -27,6 +27,20 @@ export interface TamperIncident {
   blockchainAmount: number;
   timestamp: string;
   status: 'ACTIVE' | 'RESTORED';
+
+  /**
+   * PROJECT = existing project/tender integrity
+   * DOCUMENT = document integrity
+   */
+  kind?: 'PROJECT' | 'DOCUMENT';
+}
+
+interface DocumentIntegrityRecord {
+  id: string;
+  document_name: string;
+  is_tampered: boolean | null;
+  verification_status: string | null;
+  blockchain_status: string | null;
 }
 
 // Navigation items with role restrictions
@@ -96,7 +110,10 @@ const ALL_NAV = [
 
 const ROLE_BADGE: Record<
   UserRole,
-  { label: string; class: string }
+  {
+    label: string;
+    class: string;
+  }
 > = {
   ADMIN: {
     label: 'Admin',
@@ -120,22 +137,49 @@ export function AppShell() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
+  /**
+   * Existing project/tender tampering data.
+   *
+   * We are keeping this structure so the existing
+   * project integrity system continues to work.
+   */
   const [tampered, setTampered] = useState<
     Array<{
       code: string;
       name: string;
       dbAmount: number;
       blockchainAmount: number;
+
+      kind?: 'PROJECT' | 'DOCUMENT';
+
+      dbHash?: string;
+      blockchainHash?: string;
     }>
   >([]);
 
+  /**
+   * Existing project history.
+   */
   const [history, setHistory] = useState<TamperIncident[]>([]);
+
+  /**
+   * Documents that are currently marked as tampered.
+   *
+   * Only the document ID is needed for the banner.
+   */
+  const [tamperedDocuments, setTamperedDocuments] = useState<string[]>(
+    [],
+  );
 
   const visibleNav = ALL_NAV.filter(
     (item) => !user || item.roles.includes(user.role),
   );
 
   const badge = user ? ROLE_BADGE[user.role] : null;
+
+  // ============================================================
+  // EXISTING PROJECT INTEGRITY SSE
+  // ============================================================
 
   useEffect(() => {
     const apiBase =
@@ -144,12 +188,12 @@ export function AppShell() {
 
     const token = localStorage.getItem('gramtrust_token');
 
-    const sseUrl = `${apiBase.replace(
-      /\/api\/?$/,
-      '',
-    )}/api/integrity-stream${
-      token ? `?token=${encodeURIComponent(token)}` : ''
-    }`;
+    const sseUrl =
+      apiBase.replace(/\/api\/?$/, '') +
+      '/api/integrity-stream' +
+      (token
+        ? `?token=${encodeURIComponent(token)}`
+        : '');
 
     const eventSource = new EventSource(sseUrl);
 
@@ -158,47 +202,167 @@ export function AppShell() {
         const data = JSON.parse(event.data);
 
         if (data) {
+          /**
+           * EXISTING PROJECT INTEGRITY DATA
+           */
           if (Array.isArray(data.tampered)) {
             setTampered(data.tampered);
           }
 
+          /**
+           * EXISTING PROJECT HISTORY
+           */
           if (Array.isArray(data.history)) {
             setHistory(data.history);
           }
         }
       } catch (err) {
-        console.error('Error parsing SSE data:', err);
+        console.error(
+          'Error parsing SSE data:',
+          err,
+        );
       }
     };
 
     eventSource.onerror = (err) => {
-      console.error('SSE Connection failed:', err);
+      console.error(
+        'SSE Connection failed:',
+        err,
+      );
     };
 
-    return () => eventSource.close();
+    return () => {
+      eventSource.close();
+    };
   }, []);
+
+  // ============================================================
+  // DOCUMENT INTEGRITY
+  // ============================================================
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadDocumentIntegrity() {
+      try {
+        const response =
+          await apiClient.get<{
+            success: boolean;
+            count: number;
+            data: DocumentIntegrityRecord[];
+          }>('/documents');
+
+        if (cancelled) {
+          return;
+        }
+
+        const documents = response.data.data ?? [];
+
+        /**
+         * Only documents currently marked as tampered
+         * are displayed in the ACTIVE integrity banner.
+         *
+         * Only the ID is stored/displayed.
+         */
+        const ids = documents
+          .filter(
+            (document) =>
+              document.is_tampered === true ||
+              document.verification_status === 'TAMPERED' ||
+              document.blockchain_status === 'TAMPERED',
+          )
+          .map((document) => document.id)
+          .filter(Boolean);
+
+        setTamperedDocuments(ids);
+      } catch (error) {
+        console.error(
+          'Failed to load document integrity:',
+          error,
+        );
+      }
+    }
+
+    loadDocumentIntegrity();
+
+    /**
+     * Refresh document integrity periodically so that
+     * a document changed in PostgreSQL becomes visible
+     * in the top banner without manually refreshing the page.
+     */
+    const interval = window.setInterval(
+      loadDocumentIntegrity,
+      5000,
+    );
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  // ============================================================
+  // RESTORED PROJECT INCIDENTS
+  // ============================================================
 
   const restoredIncidents = history.filter(
     (h) => h.status === 'RESTORED',
   );
 
+  // ============================================================
+  // ACTIVE PROJECTS
+  // ============================================================
+
+  const activeProjects = tampered.filter(
+    (item) => item.kind !== 'DOCUMENT',
+  );
+
+  // ============================================================
+  // ACTIVE DOCUMENTS
+  // ============================================================
+
+  /**
+   * Deduplicate document IDs.
+   */
+  const activeDocumentIds = Array.from(
+    new Set(tamperedDocuments),
+  );
+
+  // ============================================================
+  // LOGOUT
+  // ============================================================
+
   function handleLogout() {
     logout();
-    navigate('/login', { replace: true });
+
+    navigate('/login', {
+      replace: true,
+    });
   }
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,rgba(248,250,252,0.9),rgba(255,255,255,1))] text-slate-950">
+
+      {/* ========================================================
+          HEADER
+      ======================================================== */}
+
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 backdrop-blur">
+
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 lg:px-8 xl:flex-row xl:items-center xl:justify-between">
 
-          {/* Brand */}
+          {/* BRAND */}
+
           <div className="flex items-center gap-4">
+
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-soft">
+
               <ClipboardDocumentListIcon className="h-6 w-6" />
+
             </div>
 
             <div>
+
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
                 GramTrust
               </p>
@@ -206,13 +370,19 @@ export function AppShell() {
               <h1 className="text-xl font-semibold text-slate-950">
                 Immutable Fund Ledger
               </h1>
+
             </div>
+
           </div>
 
-          {/* Right: nav + user */}
+          {/* NAV + USER */}
+
           <div className="flex flex-wrap items-center gap-2">
+
             <nav className="flex flex-wrap items-center gap-2">
+
               {visibleNav.map((item) => {
+
                 const Icon = item.icon;
 
                 return (
@@ -223,40 +393,56 @@ export function AppShell() {
                     className={({ isActive }) =>
                       cn(
                         'inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-colors',
+
                         isActive
                           ? 'border-blue-200 bg-blue-50 text-blue-700'
                           : 'border-transparent bg-slate-100 text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900',
                       )
                     }
                   >
+
                     <Icon className="h-4 w-4" />
+
                     {item.name}
+
                   </NavLink>
                 );
               })}
+
             </nav>
 
-            {/* User info + logout */}
+            {/* USER */}
+
             {user && (
+
               <div className="ml-2 flex items-center gap-2 border-l border-slate-200 pl-2">
+
                 <div className="flex items-center gap-2">
+
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100">
+
                     <UserCircleIcon className="h-5 w-5 text-slate-500" />
+
                   </div>
 
                   <div className="hidden sm:block">
+
                     <p className="text-xs font-semibold leading-tight text-slate-800">
                       {user.name}
                     </p>
 
                     {badge && (
+
                       <span
                         className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${badge.class}`}
                       >
                         {badge.label}
                       </span>
+
                     )}
+
                   </div>
+
                 </div>
 
                 <button
@@ -265,80 +451,218 @@ export function AppShell() {
                   title="Logout"
                   className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
                 >
+
                   <ArrowRightStartOnRectangleIcon className="h-3.5 w-3.5" />
+
                   Logout
+
                 </button>
+
               </div>
+
             )}
+
           </div>
+
         </div>
+
       </header>
 
-      {/* Active Violations Banner */}
-      {tampered.length > 0 && (
+      {/* ========================================================
+          ACTIVE DATABASE INTEGRITY BANNER
+      ======================================================== */}
+
+      {(activeProjects.length > 0 ||
+        activeDocumentIds.length > 0) && (
+
         <div className="animate-pulse border-b border-red-200 bg-red-50 px-4 py-3 text-red-800 shadow-sm">
+
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
+
             <div className="flex items-center gap-3">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-600 text-lg font-bold text-white">
+
+              {/* RED ICON */}
+
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-600 text-lg font-bold text-white">
                 !
               </span>
 
               <div>
+
                 <p className="text-sm font-semibold">
                   DATABASE INTEGRITY VIOLATION DETECTED (ACTIVE)
                 </p>
 
-                <p className="text-xs text-red-600">
-                  The database state for {tampered.length} project(s)
-                  does not match the immutable ledger records on the
-                  blockchain:{' '}
-                  {tampered.map((p) => p.code).join(', ')}.
+                <p className="mt-1 text-xs text-red-600">
+
+                  The database state for{' '}
+
+                  {activeProjects.length > 0 && (
+                    <>
+                      {activeProjects.length} project(s)
+                    </>
+                  )}
+
+                  {activeProjects.length > 0 &&
+                    activeDocumentIds.length > 0 && (
+                      <> and </>
+                    )}
+
+                  {activeDocumentIds.length > 0 && (
+                    <>
+                      {activeDocumentIds.length} document(s)
+                    </>
+                  )}{' '}
+
+                  does not match the immutable ledger records
+                  on the blockchain.
+
                 </p>
+
+                {/* ==================================================
+                    PROJECT IDS
+                ================================================== */}
+
+                {activeProjects.length > 0 && (
+
+                  <div className="mt-2">
+
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-red-700">
+                      Projects
+                    </p>
+
+                    <div className="flex flex-wrap gap-2">
+
+                      {activeProjects.map((project) => (
+
+                        <span
+                          key={project.code}
+                          className="inline-flex items-center rounded bg-red-100 px-2 py-1 text-xs font-semibold text-red-800"
+                        >
+                          {project.code}
+                        </span>
+
+                      ))}
+
+                    </div>
+
+                  </div>
+
+                )}
+
+                {/* ==================================================
+                    DOCUMENT IDS
+                ================================================== */}
+
+                {activeDocumentIds.length > 0 && (
+
+                  <div className="mt-2">
+
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-red-700">
+                      Documents
+                    </p>
+
+                    <div className="flex flex-wrap gap-2">
+
+                      {activeDocumentIds.map((documentId) => (
+
+                        <span
+                          key={documentId}
+                          className="inline-flex items-center rounded bg-red-100 px-2 py-1 font-mono text-xs font-semibold text-red-800"
+                        >
+                          {documentId}
+                        </span>
+
+                      ))}
+
+                    </div>
+
+                  </div>
+
+                )}
+
               </div>
+
             </div>
+
           </div>
+
         </div>
+
       )}
 
-      {/* Restored Violations Banner */}
+      {/* ========================================================
+          RESTORED PROJECT TAMPERING BANNER
+      ======================================================== */}
+
       {restoredIncidents.length > 0 && (
+
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-amber-800 shadow-sm">
+
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
+
             <div className="flex items-center gap-3">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500 text-lg font-bold text-white">
+
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500 text-lg font-bold text-white">
                 ⚠
               </span>
 
               <div>
+
                 <p className="text-sm font-semibold">
                   REVERTED DATABASE TAMPERING LOG
                 </p>
 
                 <p className="text-xs text-amber-600">
-                  The following projects were modified directly in the
-                  database but have since been restored to match the
-                  blockchain records:
+
+                  The following projects were modified directly
+                  in the database but have since been restored
+                  to match the blockchain records:
+
                 </p>
 
                 <div className="mt-1 flex flex-wrap gap-2">
-                  {restoredIncidents.map((incident, idx) => (
-                    <span
-                      key={idx}
-                      className="inline-flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
-                    >
-                      {incident.code} (Restored at {incident.timestamp})
-                    </span>
-                  ))}
+
+                  {restoredIncidents.map(
+                    (incident, idx) => (
+
+                      <span
+                        key={`${incident.code}-${idx}`}
+                        className="inline-flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
+                      >
+                        {incident.code} (
+                        Restored at{' '}
+                        {incident.timestamp}
+                        )
+                      </span>
+
+                    ),
+                  )}
+
                 </div>
+
               </div>
+
             </div>
+
           </div>
+
         </div>
+
       )}
 
+      {/* ========================================================
+          MAIN CONTENT
+      ======================================================== */}
+
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+
         <Outlet />
+
       </main>
+
     </div>
   );
 }
+
+export default AppShell;

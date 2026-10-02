@@ -8,7 +8,11 @@ export type ChangeType =
   | 'BLOCKCHAIN_MISMATCH'
   | 'HASH_MISMATCH';
 
-export type TamperStatus = 'AUTHORIZED' | 'BLOCKED' | 'DETECTED' | 'TAMPERED';
+export type TamperStatus =
+  | 'AUTHORIZED'
+  | 'BLOCKED'
+  | 'DETECTED'
+  | 'TAMPERED';
 
 export interface TamperLogEntry {
   id: string;
@@ -40,8 +44,6 @@ export interface TamperLogFilters {
   dateFrom?: string | undefined;
   dateTo?: string | undefined;
   recordId?: string | undefined;
-  tenderId?: string | undefined;
-  vendorName?: string | undefined;
   limit?: number | undefined;
 }
 
@@ -81,8 +83,10 @@ function toEntry(row: Record<string, unknown>): TamperLogEntry {
     newValue: (row['new_value'] as string | null) ?? null,
     trustedHash: (row['trusted_hash'] as string | null) ?? null,
     currentHash: (row['current_hash'] as string | null) ?? null,
-    originalAmount: (row['original_amount'] as string | null) ?? null,
-    currentAmount: (row['current_amount'] as string | null) ?? null,
+    originalAmount:
+      (row['original_amount'] as string | null) ?? null,
+    currentAmount:
+      (row['current_amount'] as string | null) ?? null,
     changeType: row['change_type'] as ChangeType,
     status: row['status'] as TamperStatus,
     timestamp: row['timestamp'] as Date,
@@ -90,13 +94,35 @@ function toEntry(row: Record<string, unknown>): TamperLogEntry {
 }
 
 export const tamperLogRepository = {
-  async create(data: CreateTamperLogInput): Promise<TamperLogEntry> {
+  async create(
+    data: CreateTamperLogInput,
+  ): Promise<TamperLogEntry> {
     const { rows } = await pool.query(
       `INSERT INTO tamper_logs
-        (id, record_id, bid_id, tender_id, vendor_name, vendor_id, user_id, user_name, user_role, field_name,
-         old_value, new_value, trusted_hash, current_hash, original_amount, current_amount,
-         change_type, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+        (
+          id,
+          record_id,
+          bid_id,
+          tender_id,
+          vendor_name,
+          vendor_id,
+          user_id,
+          user_name,
+          user_role,
+          field_name,
+          old_value,
+          new_value,
+          trusted_hash,
+          current_hash,
+          original_amount,
+          current_amount,
+          change_type,
+          status
+        )
+       VALUES (
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,
+         $10,$11,$12,$13,$14,$15,$16,$17,$18
+       )
        RETURNING *`,
       [
         randomUUID(),
@@ -119,64 +145,131 @@ export const tamperLogRepository = {
         data.status,
       ],
     );
+
     return toEntry(rows[0]!);
   },
 
-  /**
-   * Deduplication check: returns existing DETECTED log for same bid + trusted hash combo.
-   */
-  async findExistingMismatch(bidId: string, trustedHash: string): Promise<TamperLogEntry | null> {
+  async findExistingMismatch(
+    recordId: string,
+    hash: string,
+  ): Promise<TamperLogEntry | null> {
     const { rows } = await pool.query(
-      `SELECT * FROM tamper_logs
-       WHERE bid_id = $1 AND trusted_hash = $2 AND status IN ('DETECTED', 'TAMPERED')
+      `SELECT *
+       FROM tamper_logs
+       WHERE record_id = $1
+         AND (
+           trusted_hash = $2
+           OR current_hash = $2
+           OR new_value = $2
+           OR old_value = $2
+         )
+         AND change_type IN (
+           'HASH_MISMATCH',
+           'BLOCKCHAIN_MISMATCH'
+         )
+       ORDER BY timestamp DESC
        LIMIT 1`,
-      [bidId, trustedHash],
+      [recordId, hash],
     );
-    return rows.length > 0 ? toEntry(rows[0]!) : null;
+
+    return rows.length > 0
+      ? toEntry(rows[0]!)
+      : null;
   },
 
-  async findAll(filters: TamperLogFilters = {}): Promise<TamperLogEntry[]> {
+  async findAll(
+    filters: TamperLogFilters = {},
+  ): Promise<TamperLogEntry[]> {
     const conditions: string[] = [];
     const values: unknown[] = [];
     let i = 1;
 
-    if (filters.userId)     { conditions.push(`user_id = $${i++}`);      values.push(filters.userId); }
-    if (filters.userRole)   { conditions.push(`user_role = $${i++}`);    values.push(filters.userRole); }
-    if (filters.changeType) { conditions.push(`change_type = $${i++}`);  values.push(filters.changeType); }
-    if (filters.status)     { conditions.push(`status = $${i++}`);       values.push(filters.status); }
-    if (filters.recordId)   { conditions.push(`record_id = $${i++}`);    values.push(filters.recordId); }
-    if (filters.tenderId)   { conditions.push(`tender_id = $${i++}`);    values.push(filters.tenderId); }
-    if (filters.vendorName) { conditions.push(`vendor_name ILIKE $${i++}`); values.push(`%${filters.vendorName}%`); }
-    if (filters.dateFrom)   { conditions.push(`timestamp >= $${i++}`);   values.push(filters.dateFrom); }
-    if (filters.dateTo)     { conditions.push(`timestamp <= $${i++}`);   values.push(filters.dateTo); }
+    if (filters.userId) {
+      conditions.push(`user_id = $${i++}`);
+      values.push(filters.userId);
+    }
 
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    if (filters.userRole) {
+      conditions.push(`user_role = $${i++}`);
+      values.push(filters.userRole);
+    }
+
+    if (filters.changeType) {
+      conditions.push(`change_type = $${i++}`);
+      values.push(filters.changeType);
+    }
+
+    if (filters.status) {
+      conditions.push(`status = $${i++}`);
+      values.push(filters.status);
+    }
+
+    if (filters.recordId) {
+      conditions.push(`record_id = $${i++}`);
+      values.push(filters.recordId);
+    }
+
+    if (filters.dateFrom) {
+      conditions.push(`timestamp >= $${i++}`);
+      values.push(filters.dateFrom);
+    }
+
+    if (filters.dateTo) {
+      conditions.push(`timestamp <= $${i++}`);
+      values.push(filters.dateTo);
+    }
+
+    const where =
+      conditions.length > 0
+        ? `WHERE ${conditions.join(' AND ')}`
+        : '';
+
     const limit = filters.limit ?? 500;
 
     const { rows } = await pool.query(
-      `SELECT * FROM tamper_logs ${where} ORDER BY timestamp DESC LIMIT $${i}`,
+      `SELECT *
+       FROM tamper_logs
+       ${where}
+       ORDER BY timestamp DESC
+       LIMIT $${i}`,
       [...values, limit],
     );
+
     return rows.map(toEntry);
   },
 
   async count(): Promise<number> {
-    const { rows } = await pool.query(`SELECT COUNT(*) as cnt FROM tamper_logs`);
+    const { rows } = await pool.query(
+      `SELECT COUNT(*) AS cnt
+       FROM tamper_logs`,
+    );
+
     return Number(rows[0]?.['cnt'] ?? 0);
   },
 
-  async countByStatus(status: TamperStatus): Promise<number> {
+  async countByStatus(
+    status: TamperStatus,
+  ): Promise<number> {
     const { rows } = await pool.query(
-      `SELECT COUNT(*) as cnt FROM tamper_logs WHERE status = $1`,
+      `SELECT COUNT(*) AS cnt
+       FROM tamper_logs
+       WHERE status = $1`,
       [status],
     );
+
     return Number(rows[0]?.['cnt'] ?? 0);
   },
 
   async findLatest(): Promise<TamperLogEntry | null> {
     const { rows } = await pool.query(
-      `SELECT * FROM tamper_logs ORDER BY timestamp DESC LIMIT 1`,
+      `SELECT *
+       FROM tamper_logs
+       ORDER BY timestamp DESC
+       LIMIT 1`,
     );
-    return rows.length > 0 ? toEntry(rows[0]!) : null;
+
+    return rows.length > 0
+      ? toEntry(rows[0]!)
+      : null;
   },
 };

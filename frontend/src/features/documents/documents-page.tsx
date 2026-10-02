@@ -71,16 +71,18 @@ export function DocumentsPage() {
 
       const token = localStorage.getItem('gramtrust_token');
 
+      // Do not make an unauthenticated request.
+      if (!token) {
+        setDocuments([]);
+        setError('Please log in to view documents.');
+        return;
+      }
+
       const response = await fetch(`${API_URL}/documents`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-
-          ...(token
-            ? {
-                Authorization: `Bearer ${token}`,
-              }
-            : {}),
+          Authorization: `Bearer ${token}`,
         },
       });
 
@@ -120,9 +122,15 @@ export function DocumentsPage() {
     }
   }
 
+  // ==========================================================
+  // WAIT FOR AUTH USER BEFORE LOADING
+  // ==========================================================
+
   useEffect(() => {
-    loadDocuments();
-  }, []);
+    if (user) {
+      loadDocuments();
+    }
+  }, [user]);
 
   // ==========================================================
   // PDF URL
@@ -142,7 +150,8 @@ export function DocumentsPage() {
     }
 
     // Normalize Windows paths
-    const normalizedPath = document.file_path.replace(/\\/g, '/');
+    const normalizedPath =
+      document.file_path.replace(/\\/g, '/');
 
     const fileName = normalizedPath.split('/').pop();
 
@@ -225,6 +234,8 @@ export function DocumentsPage() {
     action: 'anchor' | 'verify',
   ) {
     try {
+      setError('');
+
       setActionState((current) => ({
         ...current,
         [id]: action,
@@ -232,26 +243,45 @@ export function DocumentsPage() {
 
       const token = localStorage.getItem('gramtrust_token');
 
+      if (!token) {
+        throw new Error('Authentication token not found. Please log in again.');
+      }
+
       const response = await fetch(
         `${API_URL}/documents/${encodeURIComponent(id)}/${action}`,
         {
           method: 'POST',
-          headers: token
-            ? {
-                Authorization: `Bearer ${token}`,
-              }
-            : {},
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
         },
       );
 
       if (!response.ok) {
+        const text = await response.text();
+
         throw new Error(
-          `Document ${action} failed (${response.status})`,
+          `Document ${action} failed (${response.status}) ${
+            text || response.statusText
+          }`,
         );
       }
 
+      const result = await response.json();
+
+      console.log(
+        `Document ${action} response:`,
+        result,
+      );
+
       await loadDocuments();
     } catch (err) {
+      console.error(
+        `Document ${action} error:`,
+        err,
+      );
+
       setError(
         err instanceof Error
           ? err.message
@@ -625,7 +655,7 @@ export function DocumentsPage() {
                                 ID: {document.id}
                               </p>
 
-                              {/* ⭐ OPEN FILE BUTTON */}
+                              {/* OPEN FILE BUTTON */}
                               {document.file_path ? (
                                 <button
                                   type="button"
