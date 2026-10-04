@@ -12,6 +12,10 @@ import { tamperLogRoutes } from './tamper-log.routes.js';
 import { tenderRoutes } from './tender.routes.js';
 import { vendorRoutes } from './vendor.routes.js';
 import { sourceRoutes } from './source.routes.js';
+import { aiWorkVerificationRoutes } from './ai-work-verification.routes.js';
+import { aiFraudDetectionRoutes } from './ai-fraud-detection.routes.js';
+import { complaintRoutes } from './complaint.routes.js';
+import { notificationRoutes } from './notification.routes.js';
 
 // Document Integrity Verification Module
 import { documentRoutes } from './document.routes.js';
@@ -27,6 +31,25 @@ apiRoutes.use('/auth', authRoutes);
 // ─── All routes below require authentication ──────────────────────────────────
 
 apiRoutes.use(authenticate);
+
+apiRoutes.use(
+  '/ai/fraud-detection',
+  requireRole('AUDITOR', 'ADMIN', 'OFFICIAL', 'CITIZEN'),
+  aiFraudDetectionRoutes,
+);
+
+apiRoutes.use(
+  '/ai-work-verification',
+  aiWorkVerificationRoutes,
+);
+
+apiRoutes.use(
+  '/complaints',
+  requireRole('CITIZEN', 'OFFICIAL', 'ADMIN', 'AUDITOR'),
+  complaintRoutes,
+);
+
+apiRoutes.use('/notifications', notificationRoutes);
 
 // ─── Tender & Vendor Transparency Module ──────────────────────────────────────
 

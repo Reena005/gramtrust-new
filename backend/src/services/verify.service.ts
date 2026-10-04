@@ -9,6 +9,7 @@ import { blockchainRepository } from '@/repositories/blockchain.repository.js';
 import { auditRepository } from '@/repositories/audit.repository.js';
 import { tamperLogRepository } from '@/repositories/tamper-log.repository.js';
 import { AppError } from '@/utils/app-error.js';
+import { projectService } from '@/services/project.service.js';
 
 export interface BidIntegrityStatus {
   bidId: string;
@@ -69,6 +70,21 @@ export interface IntegrityVerificationReport {
   };
 
   verifiedAt: string;
+}
+
+function toFiniteAmount(value: unknown, field: string): number {
+  const amount =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim() !== ''
+        ? Number(value)
+        : Number.NaN;
+
+  if (!Number.isFinite(amount)) {
+    throw new Error(`Invalid ${field} in integrity report.`);
+  }
+
+  return amount;
 }
 
 export const verifyService = {
@@ -967,20 +983,53 @@ await tamperLogRepository.create({
       );
 
     const projects =
-      await projectRepository.findAll();
+      await projectService.list();
+
+    const amounts = projects.map((project) => ({
+      project,
+      databaseAmount: toFiniteAmount(
+        project['amount'],
+        'project amount',
+      ),
+      blockchainAmount: toFiniteAmount(
+        project['blockchainAmount'],
+        'blockchain amount',
+      ),
+    }));
+
+    const databaseAmount = amounts.reduce(
+      (total, project) => total + project.databaseAmount,
+      0,
+    );
+    const blockchainAmount = amounts.reduce(
+      (total, project) => total + project.blockchainAmount,
+      0,
+    );
+    const difference = databaseAmount - blockchainAmount;
+    const mismatchedProjects = amounts
+      .filter(
+        (project) =>
+          project.databaseAmount !== project.blockchainAmount,
+      )
+      .map((project) => project.project);
 
     return {
       audits,
 
-      totalProjects:
-        projects.length,
+      totalProjects: projects.length,
 
       verifiedCount:
         projects.filter(
-          (p) =>
-            p.integrityStatus ===
+          (project) =>
+            project['integrityStatus'] ===
             'Verified',
         ).length,
+
+      databaseAmount,
+      blockchainAmount,
+      difference,
+      status: mismatchedProjects.length === 0 ? 'Verified' : 'Mismatch',
+      mismatchedProjects,
     };
   },
 };

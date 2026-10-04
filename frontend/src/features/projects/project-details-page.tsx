@@ -8,12 +8,15 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
+import { useAuth } from '@/features/auth/auth-context';
 import { apiClient, fetcher } from '@/lib/api-client';
 import { formatCurrency, formatDateTime, formatShortDate } from '@/lib/utils';
 import { getBlockchainBadgeVariant, getIntegrityBadgeVariant, getProjectBadgeVariant, getTransactionBadgeVariant } from '@/lib/status';
 import type { LedgerProject, LedgerTransaction } from '@/types/ledger';
 
 export function ProjectDetailsPage() {
+  const { user } = useAuth();
+  const canModifyProject = user?.role !== 'CITIZEN';
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -115,7 +118,7 @@ export function ProjectDetailsPage() {
       <PageHeader
         eyebrow="Project details"
         title={`${project.id} · ${project.name}`}
-        description="Inspect the fund trail, compare the on-chain record, and run a local integrity verification."
+        description="Inspect the fund trail, compare on-chain records, and view project integrity information."
         actions={
           <>
             <Button variant="outline" onClick={() => navigate('/projects')}>
@@ -126,10 +129,12 @@ export function ProjectDetailsPage() {
               <ClockIcon className="h-4 w-4" />
               Blockchain History
             </Button>
-            <Button onClick={() => verifyMutation.mutate()} disabled={verifyMutation.isPending}>
-              <ArrowPathIcon className="h-4 w-4" />
-              {verifyMutation.isPending ? 'Verifying...' : 'Verify Integrity'}
-            </Button>
+            {canModifyProject && (
+              <Button onClick={() => verifyMutation.mutate()} disabled={verifyMutation.isPending}>
+                <ArrowPathIcon className="h-4 w-4" />
+                {verifyMutation.isPending ? 'Verifying...' : 'Verify Integrity'}
+              </Button>
+            )}
           </>
         }
       />
@@ -147,14 +152,14 @@ export function ProjectDetailsPage() {
               <CardTitle>Project information</CardTitle>
               <CardDescription>Administrative and financial metadata for the selected project.</CardDescription>
             </div>
-            {!isEditing ? (
+            {canModifyProject && !isEditing ? (
               <Button variant="outline" size="sm" onClick={handleStartEdit}>
                 Edit Amount (Demo)
               </Button>
             ) : null}
           </CardHeader>
           <CardContent>
-            {isEditing ? (
+            {canModifyProject && isEditing ? (
               <div className="mb-6 rounded-2xl border border-blue-100 bg-blue-50/50 p-5 space-y-4">
                 <p className="text-sm font-semibold text-slate-800">Tamper database amount (PostgreSQL Only):</p>
                 <div className="flex gap-3 max-w-md">
@@ -283,4 +288,3 @@ function BalanceRow({
     </div>
   );
 }
-

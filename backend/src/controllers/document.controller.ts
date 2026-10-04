@@ -3,9 +3,13 @@ import { documentService } from '@/services/document.service.js';
 
 export const documentController = {
   async getAll(_req: Request, res: Response) {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
     const documents = await documentService.getAll();
 
-    res.json({
+    return res.status(200).json({
       success: true,
       count: documents.length,
       data: documents,
@@ -17,7 +21,7 @@ export const documentController = {
       String(req.params.id)
     );
 
-    res.json({
+    return res.status(200).json({
       success: true,
       data: document,
     });
@@ -28,7 +32,7 @@ export const documentController = {
       String(req.params.id)
     );
 
-    res.json({
+    return res.status(200).json({
       success: true,
       data: result,
     });
@@ -39,7 +43,7 @@ export const documentController = {
       String(req.params.id)
     );
 
-    return res.status(201).json({
+    return res.status(200).json({
       success: true,
       data: document,
     });

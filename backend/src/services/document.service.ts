@@ -92,6 +92,126 @@ const documentSelect = `
 `;
 
 /**
+ * Find a renamed PDF for a document.
+ *
+ * Example:
+ *
+ * Expected:
+ *     documents/DOC621.pdf
+ *
+ * Actual:
+ *     documents/DOC621_test.pdf
+ *
+ * We only consider PDF files whose filename starts
+ * with the document ID.
+ *
+ * This prevents an unrelated PDF from being treated
+ * as the renamed version of this document.
+ */
+function findRenamedDocumentFile(
+  filePath: string,
+  documentId: string,
+): string | null {
+  const directory = path.dirname(filePath);
+  const expectedFileName = path.basename(filePath);
+
+  if (!fs.existsSync(directory)) {
+    return null;
+  }
+
+  const files = fs.readdirSync(directory);
+
+  const candidate = files.find((fileName) => {
+    /**
+     * Ignore the expected filename.
+     */
+    if (
+      fileName.toLowerCase() ===
+      expectedFileName.toLowerCase()
+    ) {
+      return false;
+    }
+
+    /**
+     * Only consider PDF files.
+     */
+    if (
+      path.extname(fileName).toLowerCase() !== '.pdf'
+    ) {
+      return false;
+    }
+
+    /**
+     * Remove extension.
+     */
+    const baseName = path.basename(
+      fileName,
+      path.extname(fileName),
+    );
+
+    /**
+     * Example accepted names:
+     *
+     * DOC621_test
+     * DOC621_modified
+     * DOC621_new
+     *
+     * Example rejected names:
+     *
+     * DOC620_test
+     * RANDOM.pdf
+     */
+    return baseName
+      .toLowerCase()
+      .startsWith(documentId.toLowerCase());
+  });
+
+  if (!candidate) {
+    return null;
+  }
+
+  return path.join(directory, candidate);
+}
+
+/**
+ * Mark a document as tampered and create a tamper log.
+ */
+async function markDocumentTampered(
+  document: DocumentRow,
+  currentHash?: string,
+): Promise<void> {
+  const wasAlreadyTampered =
+    document.blockchain_status === 'TAMPERED';
+
+  await pool.query(
+    `
+    UPDATE document_records
+    SET verification_status = 'TAMPERED',
+        is_tampered = true,
+        blockchain_status = 'TAMPERED',
+        verified_at = NOW()
+    WHERE id = $1
+    `,
+    [document.id],
+  );
+
+  /**
+   * Create only one log when the document enters
+   * the TAMPERED state.
+   *
+   * This prevents duplicate logs every time
+   * GET /api/documents is called.
+   */
+  if (!wasAlreadyTampered) {
+    await tamperLogService.logDocumentMismatch(
+      document.id,
+      document.blockchain_hash ?? '',
+      currentHash ?? '',
+    );
+  }
+}
+
+/**
  * Check the integrity of ONE anchored document.
  *
  * This is request-triggered.
@@ -144,7 +264,7 @@ async function checkDocumentIntegrity(
     if (!wasAlreadyTampered) {
       await tamperLogService.logDocumentMismatch(
         document.id,
-        document.blockchain_hash,
+        document.blockchain_hash ?? '',
         'MISSING_FILE_PATH',
       );
     }
@@ -161,11 +281,11 @@ async function checkDocumentIntegrity(
    *
    * Example:
    *
-   *     documents/DOC106.pdf
+   *     documents/DOC621.pdf
    *
    * becomes:
    *
-   *     backend/documents/DOC106.pdf
+   *     backend/documents/DOC621.pdf
    */
   const filePath = path.resolve(
     process.cwd(),
@@ -173,11 +293,80 @@ async function checkDocumentIntegrity(
   );
 
   /**
-   * Check whether the actual PDF exists.
+   * Check whether the expected PDF exists.
    */
   if (!fs.existsSync(filePath)) {
-    const wasAlreadyTampered =
-      document.blockchain_status === 'TAMPERED' ||
+    /**
+     * IMPORTANT:
+     *
+     * The expected file is missing.
+     *
+     * Before calling it MISSING, check whether
+     * another PDF appears to be the renamed version.
+     */
+    const renamedFilePath =
+      findRenamedDocumentFile(
+        filePath,
+        document.id,
+      );
+
+    /**
+     * A PDF with the same document ID was found
+     * under another filename.
+     *
+     * Example:
+     *
+     * DOC621.pdf
+     *      ↓
+     * DOC621_test.pdf
+     *
+     * This is treated as TAMPERING.
+     */
+    if (renamedFilePath) {
+      /**
+       * The renamed PDF can still be hashed.
+       *
+       * We use its current PDF hash only as
+       * supporting information for the tamper log.
+       */
+      const renamedPdfHash =
+        calculateFileHash(renamedFilePath);
+
+      const wasAlreadyTampered =
+        document.blockchain_status === 'TAMPERED';
+
+      await pool.query(
+        `
+        UPDATE document_records
+        SET verification_status = 'TAMPERED',
+            is_tampered = true,
+            blockchain_status = 'TAMPERED',
+            verified_at = NOW()
+        WHERE id = $1
+        `,
+        [document.id],
+      );
+
+      /**
+       * Create only one tamper log.
+       */
+      if (!wasAlreadyTampered) {
+        await tamperLogService.logDocumentMismatch(
+          document.id,
+          document.blockchain_hash ?? '',
+          renamedPdfHash,
+        );
+      }
+
+      return true;
+    }
+
+    /**
+     * No renamed PDF was found.
+     *
+     * Therefore this is a genuinely missing file.
+     */
+    const wasAlreadyMissing =
       document.blockchain_status === 'MISSING';
 
     await pool.query(
@@ -193,12 +382,12 @@ async function checkDocumentIntegrity(
     );
 
     /**
-     * Avoid duplicate logs on every page refresh.
+     * Log the missing file only once.
      */
-    if (!wasAlreadyTampered) {
+    if (!wasAlreadyMissing) {
       await tamperLogService.logDocumentMismatch(
         document.id,
-        document.blockchain_hash,
+        document.blockchain_hash ?? '',
         'MISSING_FILE',
       );
     }
@@ -209,7 +398,8 @@ async function checkDocumentIntegrity(
   /**
    * Calculate SHA-256 of the CURRENT PDF.
    */
-  const currentPdfHash = calculateFileHash(filePath);
+  const currentPdfHash =
+    calculateFileHash(filePath);
 
   /**
    * Calculate the CURRENT complete integrity hash.
@@ -222,10 +412,16 @@ async function checkDocumentIntegrity(
    *
    *     database metadata
    *
-   * Therefore changing document_name,
-   * document_type, file_path, source_dataset,
-   * amount, or the PDF itself will produce
-   * a different hash.
+   * Therefore changing:
+   *
+   * - document_name
+   * - document_type
+   * - file_path
+   * - source_dataset
+   * - amount
+   * - PDF contents
+   *
+   * will produce a different integrity hash.
    */
   const currentIntegrityHash =
     calculateDocumentIntegrityHash(
@@ -249,35 +445,10 @@ async function checkDocumentIntegrity(
   /**
    * TAMPERING DETECTED.
    */
-  const wasAlreadyTampered =
-    document.blockchain_status === 'TAMPERED';
-
-  await pool.query(
-    `
-    UPDATE document_records
-    SET verification_status = 'TAMPERED',
-        is_tampered = true,
-        blockchain_status = 'TAMPERED',
-        verified_at = NOW()
-    WHERE id = $1
-    `,
-    [document.id],
+  await markDocumentTampered(
+    document,
+    currentIntegrityHash,
   );
-
-  /**
-   * Create only ONE tamper log for the transition
-   * into the TAMPERED state.
-   *
-   * This prevents duplicate logs every time
-   * the Documents page is refreshed.
-   */
-  if (!wasAlreadyTampered) {
-    await tamperLogService.logDocumentMismatch(
-      document.id,
-      trustedHash,
-      currentIntegrityHash,
-    );
-  }
 
   return true;
 }
@@ -312,10 +483,6 @@ export const documentService = {
     /**
      * Re-read the documents after integrity checks
      * so the frontend receives the UPDATED status.
-     *
-     * For example:
-     *
-     * VERIFIED → TAMPERED
      */
     const updatedResult = await pool.query(`
       SELECT ${documentSelect}
@@ -423,6 +590,69 @@ export const documentService = {
      * File does not exist.
      */
     if (!fs.existsSync(filePath)) {
+      /**
+       * Check whether the file was renamed.
+       */
+      const renamedFilePath =
+        findRenamedDocumentFile(
+          filePath,
+          document.id,
+        );
+
+      /**
+       * RENAMED FILE
+       */
+      if (renamedFilePath) {
+        const originalFileName =
+          path.basename(filePath);
+
+        const currentFileName =
+          path.basename(renamedFilePath);
+
+        const renamedPdfHash =
+          calculateFileHash(renamedFilePath);
+
+        const wasAlreadyTampered =
+          document.blockchain_status === 'TAMPERED';
+
+        await pool.query(
+          `
+          UPDATE document_records
+          SET verification_status = 'TAMPERED',
+              is_tampered = true,
+              blockchain_status = 'TAMPERED',
+              verified_at = NOW()
+          WHERE id = $1
+          `,
+          [id],
+        );
+
+        /**
+         * Log filename tampering only once.
+         */
+        if (!wasAlreadyTampered) {
+          await tamperLogService.logDocumentMismatch(
+            id,
+            document.blockchain_hash ?? '',
+            renamedPdfHash,
+          );
+        }
+
+        return {
+          id,
+          status: 'TAMPERED',
+          isTampered: true,
+          reason: 'DOCUMENT_FILENAME_CHANGED',
+          originalFileName,
+          currentFileName,
+        };
+      }
+
+      /**
+       * No renamed PDF was found.
+       *
+       * Genuine missing file.
+       */
       await pool.query(
         `
         UPDATE document_records
@@ -564,6 +794,21 @@ export const documentService = {
       ],
     );
 
+    /**
+     * Log PDF hash tampering for unanchored
+     * documents as well.
+     */
+    if (
+      !verified &&
+      document.verification_status !== 'TAMPERED'
+    ) {
+      await tamperLogService.logDocumentMismatch(
+        id,
+        storedPdfHash,
+        currentPdfHash,
+      );
+    }
+
     return {
       id,
       storedHash: storedPdfHash,
@@ -596,13 +841,20 @@ export const documentService = {
     );
 
     if (result.rows.length === 0) {
-      throw new AppError(`Document ${id} not found`, 404);
+      throw new AppError(
+        `Document ${id} not found`,
+        404,
+      );
     }
 
-    const document = result.rows[0] as DocumentRow;
+    const document =
+      result.rows[0] as DocumentRow;
 
     if (!document.file_path) {
-      throw new AppError(`File path missing for ${id}`, 404);
+      throw new AppError(
+        `File path missing for ${id}`,
+        404,
+      );
     }
 
     const filePath = path.resolve(
@@ -617,7 +869,8 @@ export const documentService = {
       );
     }
 
-    const pdfHash = calculateFileHash(filePath);
+    const pdfHash =
+      calculateFileHash(filePath);
 
     const integrityHash =
       calculateDocumentIntegrityHash(
@@ -644,7 +897,8 @@ export const documentService = {
           },
         });
 
-      txId = fabricResult.txId ?? txId;
+      txId =
+        fabricResult.txId ?? txId;
     }
 
     const updatedResult =
@@ -672,7 +926,3 @@ export const documentService = {
     return updatedResult.rows[0];
   },
 };
-
-
-
-

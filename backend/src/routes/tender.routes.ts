@@ -12,7 +12,11 @@ tenderRoutes.get('/:id/versions', tenderController.getVersions);
 tenderRoutes.get('/:id/bids', tenderController.getBids);
 tenderRoutes.get('/:id/audit', tenderController.getAuditHistory);
 tenderRoutes.get('/:id/source', tenderController.getSource);
-tenderRoutes.get('/:id/verify', tenderController.verifyIntegrity);
+tenderRoutes.get(
+  '/:id/verify',
+  requireRole('OFFICIAL', 'ADMIN'),
+  tenderController.verifyIntegrity,
+);
 
 
 // Official Modifications (Git-like version creation): OFFICIAL, ADMIN

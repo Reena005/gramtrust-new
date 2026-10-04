@@ -17,6 +17,7 @@ export function toClientProject(
   const bcAmount = blockchainAmount ?? 0;
   return {
     id: project.code,          // frontend uses code as primary key for routes
+    databaseId: project.id,
     code: project.code,
     name: project.name,
     district: project.district,

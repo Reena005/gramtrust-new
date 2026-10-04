@@ -31,10 +31,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
 import { formatDateTime } from '@/lib/utils';
+import { useAuth } from '@/features/auth/auth-context';
 import type { TamperLog } from '@/types/tender';
 
 export function TamperLogsPage() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const canSimulateTampering =
+    user?.role === 'ADMIN' || user?.role === 'OFFICIAL';
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('ALL');
@@ -299,20 +303,22 @@ export function TamperLogsPage() {
         <div className="flex flex-wrap items-center gap-2">
 
           {/* Existing tender simulation */}
-          <Button
-            onClick={() =>
-              simulateMutation.mutate('T705')
-            }
-            disabled={simulateMutation.isPending}
-            variant="outline"
-            className="flex items-center gap-1.5 border-rose-200 bg-rose-50/50 text-rose-700 hover:bg-rose-100 hover:text-rose-800"
-          >
-            <BeakerIcon className="h-4 w-4" />
+          {canSimulateTampering && (
+            <Button
+              onClick={() =>
+                simulateMutation.mutate('T705')
+              }
+              disabled={simulateMutation.isPending}
+              variant="outline"
+              className="flex items-center gap-1.5 border-rose-200 bg-rose-50/50 text-rose-700 hover:bg-rose-100 hover:text-rose-800"
+            >
+              <BeakerIcon className="h-4 w-4" />
 
-            {simulateMutation.isPending
-              ? 'Simulating...'
-              : 'Simulate Tender Tampering (T705)'}
-          </Button>
+              {simulateMutation.isPending
+                ? 'Simulating...'
+                : 'Simulate Tender Tampering (T705)'}
+            </Button>
+          )}
 
           <Button
             onClick={() => refetch()}

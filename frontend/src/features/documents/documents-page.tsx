@@ -611,7 +611,7 @@ export function DocumentsPage() {
                     </th>
 
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Blockchain
+                      {user?.role === 'CITIZEN' ? 'Integrity' : 'Blockchain'}
                     </th>
 
                   </tr>
@@ -734,11 +734,63 @@ export function DocumentsPage() {
 
                           <div className="flex flex-col gap-2">
 
-                            <p className="text-xs font-semibold text-slate-700">
-                              {document.blockchain_hash
-                                ? 'Anchored'
-                                : 'Not anchored'}
-                            </p>
+                            {user?.role !== 'CITIZEN' && (
+                              <>
+                                <p className="text-xs font-semibold text-slate-700">
+                                  {document.blockchain_hash
+                                    ? 'Anchored'
+                                    : 'Not anchored'}
+                                </p>
+
+                                {document.blockchain_tx_id && (
+                                  <p
+                                    className="max-w-[180px] truncate text-xs text-slate-400"
+                                    title={document.blockchain_tx_id}
+                                  >
+                                    {document.blockchain_tx_id}
+                                  </p>
+                                )}
+
+                                {/* BLOCKCHAIN ACTION */}
+                                {document.blockchain_hash ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      runDocumentAction(
+                                        String(document.id),
+                                        'verify',
+                                      )
+                                    }
+                                    disabled={Boolean(action)}
+                                    className="w-fit rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 disabled:opacity-50"
+                                  >
+                                    {action === 'verify'
+                                      ? 'Verifying...'
+                                      : 'Verify'}
+                                  </button>
+                                ) : canAnchor ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      runDocumentAction(
+                                        String(document.id),
+                                        'anchor',
+                                      )
+                                    }
+                                    disabled={Boolean(action)}
+                                    className="w-fit rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 disabled:opacity-50"
+                                  >
+                                    {action === 'anchor'
+                                      ? 'Anchoring...'
+                                      : 'Anchor'}
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-slate-400">
+                                    Awaiting anchor
+                                  </span>
+                                )}
+                              </>
+                            )}
 
                             <p
                               className={`text-xs font-medium ${
@@ -752,56 +804,6 @@ export function DocumentsPage() {
                                 ? 'Yes'
                                 : 'No'}
                             </p>
-
-                            {document.blockchain_tx_id && (
-                              <p
-                                className="max-w-[180px] truncate text-xs text-slate-400"
-                                title={
-                                  document.blockchain_tx_id
-                                }
-                              >
-                                {document.blockchain_tx_id}
-                              </p>
-                            )}
-
-                            {/* BLOCKCHAIN ACTION */}
-                            {document.blockchain_hash ? (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  runDocumentAction(
-                                    String(document.id),
-                                    'verify',
-                                  )
-                                }
-                                disabled={Boolean(action)}
-                                className="w-fit rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 disabled:opacity-50"
-                              >
-                                {action === 'verify'
-                                  ? 'Verifying...'
-                                  : 'Verify'}
-                              </button>
-                            ) : canAnchor ? (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  runDocumentAction(
-                                    String(document.id),
-                                    'anchor',
-                                  )
-                                }
-                                disabled={Boolean(action)}
-                                className="w-fit rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 disabled:opacity-50"
-                              >
-                                {action === 'anchor'
-                                  ? 'Anchoring...'
-                                  : 'Anchor'}
-                              </button>
-                            ) : (
-                              <span className="text-xs text-slate-400">
-                                Awaiting anchor
-                              </span>
-                            )}
 
                           </div>
 

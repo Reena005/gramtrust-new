@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
@@ -14,6 +15,11 @@ import {
   DocumentTextIcon,
   BuildingLibraryIcon,
   BuildingOffice2Icon,
+  CpuChipIcon,
+  CameraIcon,
+  ChartBarIcon,
+  ChatBubbleLeftRightIcon,
+  BellIcon,
 } from '@heroicons/react/24/outline';
 
 import { cn } from '@/lib/utils';
@@ -77,6 +83,42 @@ const ALL_NAV = [
     roles: ['CITIZEN', 'OFFICIAL', 'ADMIN', 'AUDITOR'] as UserRole[],
   },
   {
+    name: 'AI Work Verification',
+    to: '/ai-work-verification',
+    icon: CpuChipIcon,
+    roles: ['OFFICIAL', 'ADMIN'] as UserRole[],
+  },
+  {
+    name: 'Citizen Photo Verification',
+    to: '/citizen-photo-verification',
+    icon: CameraIcon,
+    roles: ['CITIZEN'] as UserRole[],
+  },
+  {
+    name: 'Submit a Complaint',
+    to: '/complaints/new',
+    icon: ChatBubbleLeftRightIcon,
+    roles: ['CITIZEN'] as UserRole[],
+  },
+  {
+    name: 'Notifications',
+    to: '/notifications',
+    icon: BellIcon,
+    roles: ['CITIZEN'] as UserRole[],
+  },
+  {
+    name: 'Complaint Management',
+    to: '/complaints/manage',
+    icon: ClipboardDocumentListIcon,
+    roles: ['OFFICIAL', 'ADMIN'] as UserRole[],
+  },
+  {
+    name: 'AI Fraud & Anomaly Detection',
+    to: '/ai/fraud-detection',
+    icon: ChartBarIcon,
+    roles: ['CITIZEN', 'OFFICIAL', 'ADMIN', 'AUDITOR'] as UserRole[],
+  },
+  {
     name: 'Govt Sources',
     to: '/sources',
     icon: BuildingLibraryIcon,
@@ -136,6 +178,17 @@ const ROLE_BADGE: Record<
 export function AppShell() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { data: unreadNotificationCount = 0 } = useQuery<number>({
+    queryKey: ['notifications', 'unread-count'],
+    queryFn: async () => {
+      const response = await apiClient.get<{
+        success: boolean;
+        data: { count: number };
+      }>('/notifications/unread-count');
+      return response.data.data.count;
+    },
+    enabled: user?.role === 'CITIZEN',
+  });
 
   /**
    * Existing project/tender tampering data.
@@ -404,6 +457,12 @@ export function AppShell() {
                     <Icon className="h-4 w-4" />
 
                     {item.name}
+                    {item.name === 'Notifications' &&
+                      unreadNotificationCount > 0 && (
+                        <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
+                          {unreadNotificationCount}
+                        </span>
+                      )}
 
                   </NavLink>
                 );

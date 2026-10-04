@@ -7,6 +7,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.string().min(1),
+  AI_SERVICE_URL: z.string().url().default('http://localhost:8001'),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   CSV_STORAGE_PATH: z.string().default('../datasets/NREGA.csv'),
   JWT_SECRET: z.string().min(16).default('gramtrust_super_secret_jwt_key_2024_immutable_ledger'),

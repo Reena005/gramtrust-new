@@ -4,6 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { env } from '@/config/env';
+import { authService } from '@/services/auth.service';
 import { apiRoutes } from '@/routes';
 import { notFoundMiddleware } from '@/middlewares/not-found.middleware';
 import { errorMiddleware } from '@/middlewares/error.middleware';
@@ -152,6 +153,34 @@ export function createApp() {
 
   // SSE Stream Endpoint
   app.get('/api/integrity-stream', (req, res) => {
+    const authorizationHeader = req.headers.authorization;
+    const bearerToken =
+      authorizationHeader?.startsWith('Bearer ')
+        ? authorizationHeader.slice(7)
+        : undefined;
+    const queryToken =
+      typeof req.query.token === 'string' ? req.query.token : undefined;
+    const token = bearerToken ?? queryToken;
+
+    if (!token) {
+      res.status(401).json({ message: 'Authentication required.' });
+      return;
+    }
+
+    try {
+      const user = authService.verifyToken(token);
+      if (
+        !user.sub ||
+        !['CITIZEN', 'OFFICIAL', 'ADMIN', 'AUDITOR'].includes(user.role)
+      ) {
+        res.status(403).json({ message: 'Access denied.' });
+        return;
+      }
+    } catch {
+      res.status(401).json({ message: 'Invalid or expired token.' });
+      return;
+    }
+
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');

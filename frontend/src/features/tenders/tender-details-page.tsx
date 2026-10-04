@@ -76,11 +76,13 @@ export function TenderDetailsPage() {
       setEditDepartment(data.department);
       setEditStatus(data.status);
 
-      // Auto-check integrity on load
-      try {
-        const rep = await tenderService.verifyTender(id);
-        setVerifyReport(rep);
-      } catch {}
+      if (user?.role !== 'CITIZEN') {
+        // Auto-check integrity on load
+        try {
+          const rep = await tenderService.verifyTender(id);
+          setVerifyReport(rep);
+        } catch {}
+      }
     } catch (err: any) {
       setError(err.response?.data?.message || err.message || 'Failed to load tender');
     } finally {
@@ -88,7 +90,7 @@ export function TenderDetailsPage() {
     }
   }
 
-  useEffect(() => { loadTenderDetails(); }, [id]);
+  useEffect(() => { loadTenderDetails(); }, [id, user?.role]);
 
   async function handleVerifyBlockchain() {
     if (!id) return;
@@ -172,6 +174,7 @@ export function TenderDetailsPage() {
     tender.blockchainStatus === 'Tampered' ||
     (verifyReport?.tamperAlerts && verifyReport.tamperAlerts.length > 0)
   );
+  const hasVerificationReport = Boolean(verifyReport);
 
   const tamperedVendorName =
     verifyReport?.tamperedVendorName ||
@@ -223,9 +226,13 @@ export function TenderDetailsPage() {
                 <span className="inline-flex items-center gap-1 rounded-md bg-rose-100 px-2 py-0.5 text-[11px] font-extrabold text-rose-700 border border-rose-300">
                   <ExclamationTriangleIcon className="h-3.5 w-3.5" /> ⚠ TAMPERED
                 </span>
-              ) : (
+              ) : hasVerificationReport ? (
                 <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
                   <CheckBadgeIcon className="h-3.5 w-3.5" /> ✓ VERIFIED
+                </span>
+              ) : (
+                <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                  Integrity: {tender.blockchainStatus || 'Not verified'}
                 </span>
               )}
             </div>
@@ -233,17 +240,19 @@ export function TenderDetailsPage() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={handleVerifyBlockchain}
-            className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-semibold ${
-              isTampered
-                ? 'border-rose-300 bg-rose-100 text-rose-800 hover:bg-rose-200'
-                : 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
-            }`}
-          >
-            <ShieldCheckIcon className="h-4 w-4 text-emerald-600" />
-            {isTampered ? '⚠ Verification Alert' : 'Verify Integrity'}
-          </button>
+          {user?.role !== 'CITIZEN' && (
+            <button
+              onClick={handleVerifyBlockchain}
+              className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-semibold ${
+                isTampered
+                  ? 'border-rose-300 bg-rose-100 text-rose-800 hover:bg-rose-200'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+              }`}
+            >
+              <ShieldCheckIcon className="h-4 w-4 text-emerald-600" />
+              {isTampered ? '⚠ Verification Alert' : 'Verify Integrity'}
+            </button>
+          )}
           {canEdit && (
             <button onClick={() => { setEditEstimatedValue(String(tender.estimatedValue)); setEditTitle(tender.title); setEditDepartment(tender.department); setEditStatus(tender.status); setVersionError(null); setShowVersionModal(true); }} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700">
               <PencilSquareIcon className="h-4 w-4" /> Create New Version
@@ -331,7 +340,7 @@ export function TenderDetailsPage() {
                 </div>
               </div>
             </div>
-          ) : (
+          ) : hasVerificationReport ? (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-6">
               <div className="flex items-center gap-3">
                 <ShieldCheckIcon className="h-7 w-7 text-emerald-600 shrink-0" />
@@ -339,6 +348,20 @@ export function TenderDetailsPage() {
                   <h4 className="font-semibold text-emerald-900">✓ Record Integrity Verified</h4>
                   <p className="text-xs text-emerald-700 mt-0.5">
                     All bidder submissions and project specifications are verified authentic against official government records. No database tampering detected.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
+              <div className="flex items-center gap-3">
+                <ShieldCheckIcon className="h-7 w-7 text-slate-500 shrink-0" />
+                <div>
+                  <h4 className="font-semibold text-slate-900">
+                    Current Integrity Status: {tender.blockchainStatus || 'Not available'}
+                  </h4>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    Existing tender and audit information is available in the details and Audit History sections.
                   </p>
                 </div>
               </div>

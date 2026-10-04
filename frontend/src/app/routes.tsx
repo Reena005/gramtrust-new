@@ -5,6 +5,7 @@ import { DashboardPage } from '@/features/dashboard/dashboard-page';
 import { ProjectsPage } from '@/features/projects/projects-page';
 import { ProjectDetailsPage } from '@/features/projects/project-details-page';
 import { BlockchainVerificationPage } from '@/features/verification/blockchain-verification-page';
+import { AIFraudDetectionPage } from '@/features/verification/ai-fraud-detection-page';
 import { IntegrityReportPage } from '@/features/reports/integrity-report-page';
 
 import { AdminPanelPage } from '@/features/admin/admin-panel-page';
@@ -21,6 +22,14 @@ import { TenderDetailsPage } from '@/features/tenders/tender-details-page';
 import { GovernmentSourcesPage } from '@/features/sources/government-sources-page';
 import { VendorsPage } from '@/features/vendors/vendors-page';
 import { DocumentsPage } from '@/features/documents/documents-page';
+import { ComplaintSubmissionPage } from '@/features/complaints/complaint-page';
+import { MyComplaintsPage } from '@/features/complaints/my-complaints-page';
+import { ComplaintManagementPage } from '@/features/complaints/complaint-management-page';
+import { NotificationsPage } from '@/features/notifications/notifications-page';
+import {
+  AIWorkVerificationPage,
+  CitizenPhotoVerificationPage,
+} from '@/features/ai-work-verification/ai-work-verification-page';
 
 import { useAuth } from '@/features/auth/auth-context';
 
@@ -126,6 +135,61 @@ export function AppRoutes() {
             path="/documents"
             element={<DocumentsPage />}
           />
+
+          <Route
+            element={
+              <ProtectedRoute
+                roles={['OFFICIAL', 'ADMIN']}
+              />
+            }
+          >
+            <Route
+              path="/complaints/manage"
+              element={<ComplaintManagementPage />}
+            />
+            <Route
+              path="/ai-work-verification"
+              element={<AIWorkVerificationPage />}
+            />
+          </Route>
+
+          <Route
+            element={
+              <ProtectedRoute
+                roles={['CITIZEN']}
+              />
+            }
+          >
+            <Route
+              path="/complaints"
+              element={<MyComplaintsPage />}
+            />
+            <Route
+              path="/notifications"
+              element={<NotificationsPage />}
+            />
+            <Route
+              path="/complaints/new"
+              element={<ComplaintSubmissionPage />}
+            />
+            <Route
+              path="/citizen-photo-verification"
+              element={<CitizenPhotoVerificationPage />}
+            />
+          </Route>
+
+          <Route
+            element={
+              <ProtectedRoute
+                roles={['CITIZEN', 'OFFICIAL', 'ADMIN', 'AUDITOR']}
+              />
+            }
+          >
+            <Route
+              path="/ai/fraud-detection"
+              element={<AIFraudDetectionPage />}
+            />
+          </Route>
 
           <Route
             path="/tenders"
